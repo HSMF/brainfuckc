@@ -44,6 +44,34 @@ pub struct Tid(String);
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Lbl(String);
 
+impl Uid {
+    pub fn new<S>(s: S) -> Self
+    where
+        S: ToString,
+    {
+        Self(s.to_string())
+    }
+}
+
+impl Gid {
+    pub fn new<S>(s: S) -> Self
+    where
+        S: ToString,
+    {
+        Self(s.to_string())
+    }
+}
+
+
+impl Lbl {
+    pub fn new<S>(s: S) -> Self
+    where
+        S: ToString,
+    {
+        Self(s.to_string())
+    }
+}
+
 impl Display for Uid {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "%{}", self.0)
@@ -188,6 +216,7 @@ pub enum Insn {
     ICmp(Cnd, Type, Operand, Operand),
     Alloca(Type),
     Load(Type, Operand),
+    /// type src dest
     Store(Type, Operand, Operand),
     Call(Type, Operand, Vec<(Type, Operand)>),
     Gep(Type, Operand, Vec<Operand>),
@@ -227,7 +256,13 @@ impl Display for Insn {
     }
 }
 
-pub struct Instruction(Uid, Insn);
+pub struct Instruction(pub Uid, pub Insn);
+
+impl Instruction {
+    pub fn unnamed(insn: Insn) -> Self {
+        Instruction(Uid::new("<unnamed>"), insn)
+    }
+}
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -253,8 +288,8 @@ impl Display for Term {
         match self {
             Term::RetVoid => write!(f, "ret void"),
             Term::Ret(ty, op) => write!(f, "ret {ty} {op}"),
-            Term::Br(cnd, yes, no) => write!(f, "br i1 {cnd}, label {yes}, label {no}"),
-            Term::BrUncond(to) => write!(f, "br label {to}"),
+            Term::Br(cnd, yes, no) => write!(f, "br i1 {cnd}, label %{yes}, label %{no}"),
+            Term::BrUncond(to) => write!(f, "br label %{to}"),
         }
     }
 }
@@ -262,7 +297,13 @@ impl Display for Term {
 /// block as defined by llvm
 pub struct Block {
     insns: Vec<Instruction>,
-    term: (Uid, Term),
+    term: Term,
+}
+
+impl Block {
+    pub fn new(insns: Vec<Instruction>, term: Term) -> Self {
+        Self { insns, term }
+    }
 }
 
 impl Display for Block {
@@ -271,7 +312,7 @@ impl Display for Block {
             writeln!(f, "    {ins}")?;
         }
 
-        writeln!(f, "    {}", self.term.1)?;
+        writeln!(f, "    {}", self.term)?;
 
         Ok(())
     }
@@ -283,12 +324,18 @@ pub struct Cfg {
     labeled: Vec<(Lbl, Block)>,
 }
 
+impl Cfg {
+    pub fn new(entry: Block, labeled: Vec<(Lbl, Block)>) -> Self {
+        Self { entry, labeled }
+    }
+}
+
 impl Display for Cfg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.entry)?;
 
         for (lbl, block) in &self.labeled {
-            writeln!(f, "  {lbl}")?;
+            writeln!(f, "  {lbl}:")?;
             write!(f, "{block}")?;
         }
 
@@ -302,6 +349,17 @@ pub struct Fdecl {
     args: Vec<(Type, Uid)>,
     return_type: Type,
     body: Cfg,
+}
+
+impl Fdecl {
+    pub fn new(name: Gid, args: Vec<(Type, Uid)>, return_type: Type, body: Cfg) -> Self {
+        Self {
+            name,
+            args,
+            return_type,
+            body,
+        }
+    }
 }
 
 impl Display for Fdecl {
@@ -328,15 +386,46 @@ pub enum Ginit {
     Gid(Gid),
     ConstInt(i64),
     String(String),
-    Array(Vec<(Type, Ginit)>),
-    Struct(Vec<(Type, Ginit)>),
+    Array(Vec<Gdecl>),
+    Struct(Vec<Gdecl>),
     Bitcast(Type, Box<Ginit>, Type),
+    Zeroinit,
 }
 
 /// global declaration
-struct Gdecl(Type, Ginit);
+pub struct Gdecl {
+    typ: Type,
+    init: Ginit,
+}
+
+impl Gdecl {
+    pub fn new(typ: Type, init: Ginit) -> Self {
+        Self { typ, init }
+    }
+}
+impl Display for Ginit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ginit::Null => write!(f, "null"),
+            Ginit::Gid(g) => write!(f, "{g}"),
+            Ginit::ConstInt(i) => write!(f, "{i}"),
+            Ginit::String(s) => write!(f, r#"c"{}\00""#, s.escape_debug()),
+            Ginit::Array(ts) => write!(f, "[ {} ]", ts.iter().format(", ")),
+            Ginit::Struct(ts) => write!(f, "{{ {} }}", ts.iter().format(", ")),
+            Ginit::Bitcast(t1, op, t2) => write!(f, "bitcast ({t1} {op} to {t2})"),
+            Ginit::Zeroinit => write!(f, "zeroinitializer"),
+        }
+    }
+}
+
+impl Display for Gdecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.typ, self.init)
+    }
+}
 
 /// program
+#[derive(Default)]
 pub struct Program {
     type_decls: Vec<(Tid, Type)>,
     func_decls: Vec<Fdecl>,
@@ -344,8 +433,55 @@ pub struct Program {
     extern_decls: Vec<(Gid, Type)>,
 }
 
+impl Program {
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    pub fn extern_decls(mut self, extern_decls: Vec<(Gid, Type)>) -> Self {
+        self.extern_decls = extern_decls;
+        self
+    }
+
+    pub fn global_decls(mut self, global_decls: Vec<(Gid, Gdecl)>) -> Self {
+        self.global_decls = global_decls;
+        self
+    }
+
+    pub fn add_global_decl(&mut self, name: Gid, decl: Gdecl) -> &mut Self {
+        self.global_decls.push((name, decl));
+        self
+    }
+
+    pub fn type_decls(mut self, type_decls: Vec<(Tid, Type)>) -> Self {
+        self.type_decls = type_decls;
+        self
+    }
+
+    pub fn func_decls(mut self, func_decls: Vec<Fdecl>) -> Self {
+        self.func_decls = func_decls;
+        self
+    }
+
+    pub fn add_func_decl(&mut self, fdecl: Fdecl) -> &mut Self {
+        self.func_decls.push(fdecl);
+        self
+    }
+}
+
 impl Display for Program {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (gid, gdecl) in &self.global_decls {
+            writeln!(f, "{gid} = global {gdecl}")?;
+        }
+
+        for (gid, t) in &self.extern_decls {
+            match t {
+                Type::Fun(ts, rt) => writeln!(f, "declare {rt} {gid}({})", ts.iter().format(", "))?,
+                _ => writeln!(f, "{gid} = external {t}")?,
+            }
+        }
+
         for func in &self.func_decls {
             writeln!(f, "{func}")?;
         }

@@ -1,16 +1,15 @@
-use compile::compile;
+use std::{fs::File, io::Write, process::Command};
 
-use crate::ast::Ctx;
+use brainfuckc::compile::compile;
 
-mod ast;
-pub mod llvm;
-mod parser;
+use brainfuckc::ast::{Action, Ctx};
 
-mod compile;
-
-fn main() {
-    let helloworld: ast::Action = "++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.".parse().unwrap();
-    let ast::Action::Block(helloworld) = helloworld else {
+fn main() -> anyhow::Result<()> {
+    let s = std::env::args().nth(1).unwrap_or("
+        ++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
+        ".to_string());
+    let helloworld: Action = s.parse().unwrap();
+    let Action::Block(helloworld) = helloworld else {
         panic!();
     };
     // println!("{helloworld:#?}");
@@ -18,4 +17,34 @@ fn main() {
 
     let llvm = compile(&helloworld);
     println!("{llvm}");
+
+    let mut f = File::create("target/tmp.ll")?;
+    write!(f, "{llvm}")?;
+
+    Command::new("clang")
+        .args([
+            "target/tmp.ll",
+            "-c",
+            "-Wno-override-module",
+            "-O3",
+            "-o",
+            "target/tmp.o",
+        ])
+        .spawn()?
+        .wait()?;
+    Command::new("cargo")
+        .args(["build", "--package", "stdlib"])
+        .spawn()?
+        .wait()?;
+    Command::new("clang")
+        .args([
+            "target/tmp.o",
+            "target/debug/libstdlib.dylib",
+            "-O3",
+            "-o",
+            "target/tmp",
+        ])
+        .spawn()?
+        .wait()?;
+    Ok(())
 }

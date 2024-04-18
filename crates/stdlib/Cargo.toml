@@ -1,18 +1,11 @@
 [package]
-name = "brainfuckc"
+name = "stdlib"
 version = "0.1.0"
 edition = "2021"
 
-[[bin]]
-name = "brainfuckc"
-path = "src/main.rs"
+[lib]
+crate-type = ["cdylib"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[workspace]
-members = ["crates/stdlib"]
-
-
 [dependencies]
-anyhow = "1.0.82"
-itertools = "0.12.1"
