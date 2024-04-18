@@ -250,7 +250,12 @@ pub enum Term {
 
 impl Display for Term {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        match self {
+            Term::RetVoid => write!(f, "ret void"),
+            Term::Ret(ty, op) => write!(f, "ret {ty} {op}"),
+            Term::Br(cnd, yes, no) => write!(f, "br i1 {cnd}, label {yes}, label {no}"),
+            Term::BrUncond(to) => write!(f, "br label {to}"),
+        }
     }
 }
 
@@ -260,18 +265,61 @@ pub struct Block {
     term: (Uid, Term),
 }
 
+impl Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for ins in &self.insns {
+            writeln!(f, "    {ins}")?;
+        }
+
+        writeln!(f, "    {}", self.term.1)?;
+
+        Ok(())
+    }
+}
+
 /// control flow graph
 pub struct Cfg {
     entry: Block,
     labeled: Vec<(Lbl, Block)>,
 }
 
+impl Display for Cfg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.entry)?;
+
+        for (lbl, block) in &self.labeled {
+            writeln!(f, "  {lbl}")?;
+            write!(f, "{block}")?;
+        }
+
+        Ok(())
+    }
+}
+
 /// function declaration
 pub struct Fdecl {
-    arg_types: Vec<Type>,
+    name: Gid,
+    args: Vec<(Type, Uid)>,
     return_type: Type,
-    param: Vec<Uid>,
     body: Cfg,
+}
+
+impl Display for Fdecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "define {} {}({}) {{",
+            self.return_type,
+            self.name,
+            self.args
+                .iter()
+                .format_with(", ", |(ty, uid), f| f(&format_args!("{ty} {uid}")))
+        )?;
+
+        write!(f, "{}", self.body)?;
+
+        write!(f, "}}")
+    }
 }
 
 /// global initializer
@@ -291,7 +339,17 @@ struct Gdecl(Type, Ginit);
 /// program
 pub struct Program {
     type_decls: Vec<(Tid, Type)>,
-    func_decls: Vec<(Gid, Fdecl)>,
+    func_decls: Vec<Fdecl>,
     global_decls: Vec<(Gid, Gdecl)>,
     extern_decls: Vec<(Gid, Type)>,
+}
+
+impl Display for Program {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for func in &self.func_decls {
+            writeln!(f, "{func}")?;
+        }
+
+        Ok(())
+    }
 }
