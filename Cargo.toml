@@ -16,3 +16,4 @@ members = ["crates/stdlib"]
 [dependencies]
 anyhow = "1.0.82"
 itertools = "0.12.1"
+llvm = { git = "https://github.com/HSMF/llvm-defs-rs.git" }

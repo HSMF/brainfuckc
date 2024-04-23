@@ -2,21 +2,33 @@ use std::{fs::File, io::Write, process::Command};
 
 use brainfuckc::compile::compile;
 
-use brainfuckc::ast::{Action, Ctx};
+use brainfuckc::ast::Action;
 
 fn main() -> anyhow::Result<()> {
-    let s = std::env::args().nth(1).unwrap_or("
-        ++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]>>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
-        ".to_string());
+    let s = if let Some(x) = std::env::args().nth(1) {
+        x
+    } else {
+        let mut s = String::new();
+        for line in std::io::stdin().lines() {
+            let line = line.unwrap();
+            s += &line;
+            s += "\n";
+        }
+        s
+    };
+    // let s = std::env::args().nth(1).unwrap_or("
+    //     ++++++++[>++++[>++>+++>+++>+<<<<-]>+>+>->>+[<]<-]
+    //     >>.>---.+++++++..+++.>>.<-.<.+++.------.--------.>>+.>++.
+    //     ".to_string());
     let helloworld: Action = s.parse().unwrap();
     let Action::Block(helloworld) = helloworld else {
         panic!();
     };
     // println!("{helloworld:#?}");
-    Ctx::new(std::io::stdin(), std::io::stdout()).simulate(&helloworld);
+    // Ctx::new(std::io::stdin(), std::io::stdout()).simulate(&helloworld);
 
     let llvm = compile(&helloworld);
-    println!("{llvm}");
+    // println!("{llvm}");
 
     let mut f = File::create("target/tmp.ll")?;
     write!(f, "{llvm}")?;
@@ -46,5 +58,6 @@ fn main() -> anyhow::Result<()> {
         ])
         .spawn()?
         .wait()?;
+    Command::new("target/tmp").spawn()?.wait()?;
     Ok(())
 }

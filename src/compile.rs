@@ -1,10 +1,9 @@
 use std::fmt::Debug;
 
-use crate::{
-    ast::Action,
-    llvm::{
-        self, Block, Bop, Cfg, Fdecl, Gdecl, Gid, Insn, Instruction, Lbl, Operand, Term, Type, Uid,
-    },
+use crate::ast::Action;
+
+use llvm::{
+    self, Block, Bop, Cfg, Fdecl, Gdecl, Gid, Insn, Instruction, Label, Operand, Term, Type, Uid,
 };
 struct Ctx {
     counter: usize,
@@ -20,16 +19,16 @@ impl Ctx {
         format!("i{}", self.counter)
     }
 
-    fn next_lbl(&mut self) -> Lbl {
+    fn next_lbl(&mut self) -> Label {
         self.counter += 1;
-        Lbl::new(format!("l{}", self.counter))
+        Label::new(format!("l{}", self.counter))
     }
 }
 
 enum Elt {
     I(Instruction),
     T(Term),
-    L(Lbl),
+    L(Label),
 }
 
 #[derive(Default)]
@@ -103,25 +102,25 @@ fn compile_action(ctx: &mut Ctx, action: &Action, mut stream: Stream) -> Stream 
 
         stream.pushi(Instruction(
             cur_pos.clone(),
-            Insn::Load(Type::Int, Operand::Id(Uid::new("cursor"))),
+            Insn::Load(Type::i64(), Operand::Id(Uid::new("cursor"))),
         ));
         stream.pushi(Instruction(
             new_pos.clone(),
-            Insn::Binop(bop, Type::Int, Operand::Id(cur_pos), Operand::ConstInt(1)),
+            Insn::Binop(bop, Type::i64(), Operand::Id(cur_pos), Operand::ConstInt(1)),
         ));
 
         stream.pushi(Instruction(
             in_range_pos.clone(),
             Insn::Binop(
                 Bop::SRem,
-                Type::Int,
+                Type::i64(),
                 Operand::Id(new_pos),
                 Operand::ConstInt(1024),
             ),
         ));
 
         stream.pushi(Instruction::unnamed(Insn::Store(
-            Type::Int,
+            Type::i64(),
             Operand::Id(in_range_pos),
             Operand::Id(Uid::new("cursor")),
         )))
@@ -135,27 +134,27 @@ fn compile_action(ctx: &mut Ctx, action: &Action, mut stream: Stream) -> Stream 
 
         stream.pushi(Instruction(
             cursor_val.clone(),
-            Insn::Load(Type::Int, Operand::Id(Uid::new("cursor"))),
+            Insn::Load(Type::i64() , Operand::Id(Uid::new("cursor"))),
         ));
         stream.pushi(Instruction(
             addr.clone(),
             Insn::Gep(
-                Type::Byte,
+                Type::i8(),
                 Operand::Gid(Gid::new("band")),
                 vec![Operand::Id(cursor_val)],
             ),
         ));
         stream.pushi(Instruction(
             cur_val.clone(),
-            Insn::Load(Type::Byte, Operand::Id(addr.clone())),
+            Insn::Load(Type::i8(), Operand::Id(addr.clone())),
         ));
         stream.pushi(Instruction(
             new_val.clone(),
-            Insn::Binop(bop, Type::Byte, Operand::Id(cur_val), Operand::ConstInt(1)),
+            Insn::Binop(bop, Type::i8(), Operand::Id(cur_val), Operand::ConstInt(1)),
         ));
 
         stream.pushi(Instruction::unnamed(Insn::Store(
-            Type::Byte,
+            Type::i8(),
             Operand::Id(new_val),
             Operand::Id(addr),
         )))
@@ -181,24 +180,24 @@ fn compile_action(ctx: &mut Ctx, action: &Action, mut stream: Stream) -> Stream 
 
             stream.pushi(Instruction(
                 cursor_val.clone(),
-                Insn::Load(Type::Int, Operand::Id(Uid::new("cursor"))),
+                Insn::Load(Type::i64(), Operand::Id(Uid::new("cursor"))),
             ));
             stream.pushi(Instruction(
                 addr.clone(),
                 Insn::Gep(
-                    Type::Byte,
+                    Type::i8(),
                     Operand::Gid(Gid::new("band")),
                     vec![Operand::Id(cursor_val)],
                 ),
             ));
             stream.pushi(Instruction(
                 cur_val.clone(),
-                Insn::Load(Type::Byte, Operand::Id(addr.clone())),
+                Insn::Load(Type::i8(), Operand::Id(addr.clone())),
             ));
             stream.pushi(Instruction::unnamed(Insn::Call(
                 Type::Void,
                 Operand::Gid(Gid::new("print_char")),
-                vec![(Type::Byte, Operand::Id(cur_val))],
+                vec![(Type::i8(), Operand::Id(cur_val))],
             )))
         }
         Action::Input => todo!(),
@@ -217,26 +216,26 @@ fn compile_action(ctx: &mut Ctx, action: &Action, mut stream: Stream) -> Stream 
 
             stream.pushi(Instruction(
                 cursor_val.clone(),
-                Insn::Load(Type::Int, Operand::Id(Uid::new("cursor"))),
+                Insn::Load(Type::i64(), Operand::Id(Uid::new("cursor"))),
             ));
             stream.pushi(Instruction(
                 addr.clone(),
                 Insn::Gep(
-                    Type::Byte,
+                    Type::i8(),
                     Operand::Gid(Gid::new("band")),
                     vec![Operand::Id(cursor_val)],
                 ),
             ));
             stream.pushi(Instruction(
                 cur_val.clone(),
-                Insn::Load(Type::Byte, Operand::Id(addr.clone())),
+                Insn::Load(Type::i8(), Operand::Id(addr.clone())),
             ));
 
             stream.pushi(Instruction(
                 is_zero.clone(),
                 Insn::ICmp(
                     llvm::Cnd::Eq,
-                    Type::Byte,
+                    Type::i8(),
                     Operand::Id(cur_val),
                     Operand::ConstInt(0),
                 ),
@@ -257,14 +256,14 @@ fn compile_action(ctx: &mut Ctx, action: &Action, mut stream: Stream) -> Stream 
 }
 
 pub fn compile(code: &[Action]) -> llvm::Program {
-    let mut program = llvm::Program::new().extern_decls(vec![
+    let mut program = llvm::Program::new().with_extern_decls(vec![
         (
             Gid::new("print_char"),
-            Type::Fun(vec![Type::Byte], Box::new(Type::Void)),
+            Type::Fun(vec![Type::i8()], Box::new(Type::Void)),
         ),
         (
             Gid::new("get_char"),
-            Type::Fun(vec![], Box::new(Type::Byte)),
+            Type::Fun(vec![], Box::new(Type::i8())),
         ),
         (Gid::new("flush"), Type::Fun(vec![], Box::new(Type::Void))),
         (Gid::new("init"), Type::Fun(vec![], Box::new(Type::Void))),
@@ -272,7 +271,7 @@ pub fn compile(code: &[Action]) -> llvm::Program {
     program.add_global_decl(
         Gid::new("band"),
         Gdecl::new(
-            Type::Array(1024, Box::new(Type::Byte)),
+            Type::Array(1024, Box::new(Type::i8())),
             llvm::Ginit::Zeroinit,
         ),
     );
@@ -285,9 +284,9 @@ pub fn compile(code: &[Action]) -> llvm::Program {
         Operand::Gid(Gid::new("init")),
         vec![],
     )));
-    stream.pushi(Instruction(Uid::new("cursor"), Insn::Alloca(Type::Int)));
+    stream.pushi(Instruction(Uid::new("cursor"), Insn::Alloca(Type::i64())));
     stream.pushi(Instruction::unnamed(Insn::Store(
-        Type::Int,
+        Type::i64(),
         Operand::ConstInt(0),
         Operand::Id(Uid::new("cursor")),
     )));
@@ -301,11 +300,11 @@ pub fn compile(code: &[Action]) -> llvm::Program {
         Operand::Gid(Gid::new("flush")),
         vec![],
     )));
-    stream.pusht(Term::Ret(Type::Int, Operand::ConstInt(0)));
+    stream.pusht(Term::Ret(Type::i64(), Operand::ConstInt(0)));
 
     // println!("{stream:?}");
     let cfg: Cfg = stream.into();
 
-    program.add_func_decl(Fdecl::new(Gid::new("main"), vec![], Type::Int, cfg));
+    program.add_func_decl(Fdecl::new(Gid::new("main"), vec![], Type::i64(), cfg));
     program
 }
